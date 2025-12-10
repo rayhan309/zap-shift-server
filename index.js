@@ -52,6 +52,8 @@ const varifyFirebaseToken = async (req, res, next) => {
   next();
 };
 
+
+
 // uri
 const uri = process.env.DB_uri;
 
@@ -77,6 +79,22 @@ async function run() {
     const userCollections = myDB.collection("userCollections");
     const riderCollections = myDB.collection("riderCollections");
 
+
+    // verify admin
+const verifyAdmin = async (req, res, next) => {
+  const currentUserEmail = req.user_email;
+  // const userEmail = req.query.email;
+  
+  const expectEmail = await userCollections.findOne({email: currentUserEmail});
+
+// console.log(expectEmail)
+  if(!expectEmail || expectEmail.role !== 'admin') {
+    return res.status(403).send({message: 'forbidden access'})
+  }
+  // next();
+  next();
+}
+
     // create users apis
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -95,10 +113,34 @@ async function run() {
       res.send(result);
     });
 
+    app.get('/users', varifyFirebaseToken, async (req, res) => {
+      const result = await userCollections.find().toArray();
+      res.send(result);
+    });
+
+    app.get('/users/:email/role', varifyFirebaseToken, async (req, res) => {
+      const email = req.params.email;
+      const result = await userCollections.findOne({email});
+      res.send(result);
+    });
+
+    app.patch('/users/:id', varifyFirebaseToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const roleInfo = req.body;
+      const query = {_id: new ObjectId(id)};
+      const updateDoc = {
+        $set: {
+          role: roleInfo.role
+        }
+      }
+      const result = await userCollections.updateOne(query, updateDoc);
+      res.send(result);
+    });
+
     // app.get('/users')
 
     // mongo db all parsel get
-    app.get("/parcels", async (req, res) => {
+    app.get("/parcels", varifyFirebaseToken,  async (req, res) => {
       const { email } = req.query;
       const query = {};
 
@@ -190,6 +232,7 @@ async function run() {
             $set: {
               status: "paid",
               trackingId: trackingId,
+              dalivaryStatus: 'painding',
             },
           };
           const result = await parcelColections.updateOne(query, update);
@@ -204,6 +247,7 @@ async function run() {
             paymentStatus: session.payment_status,
             payDate: new Date(),
             parcelName: session.metadata.parcelName,
+            dalivaryStatus: 'painding',
             trackingId: trackingId,
           };
 
@@ -294,7 +338,7 @@ async function run() {
     // });
 
     // rider reques
-    app.post("/riders", async (req, res) => {
+    app.post("/riders", varifyFirebaseToken, async (req, res) => {
       const newRider = req.body;
       newRider.reqTime = new Date();
       newRider.status = "painding";
@@ -312,18 +356,19 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/riders", async (req, res) => {
+    app.get("/riders", varifyFirebaseToken, async (req, res) => {
       const result = await riderCollections.find().toArray();
       res.send(result);
     });
 
-    app.patch("/riders/:riderId", async (req, res) => {
+    app.patch("/riders/:riderId", varifyFirebaseToken, async (req, res) => {
       const id = req.params.riderId;
       const query = { _id: new ObjectId(id) };
       const { status } = req.body;
       const updateDoc = {
         $set: {
           status,
+          workStatus: 'abailable'
         },
       };
 
@@ -351,7 +396,7 @@ async function run() {
       res.send({result});
     });
 
-    app.delete("/riders/:riderId", async (req, res) => {
+    app.delete("/riders/:riderId", varifyFirebaseToken, async (req, res) => {
       const id = req.params.riderId;
       const query = {_id: new ObjectId(id)};
       const result = await riderCollections.deleteOne(query);
